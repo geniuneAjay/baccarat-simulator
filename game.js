@@ -1,4 +1,5 @@
 const HANDS = 70, START_BET = 50000, MIN_BET = 50000, DECKS = 8;
+const MAX_SESSIONS = 2000;   // input box limit
 
 // Exact real-world odds for 8-deck Punto Banco
 const REAL = { B: 0.458597, P: 0.446247, T: 0.095156 };
@@ -374,7 +375,7 @@ function drawGraph(S) {
 
 // ---------- Buttons ----------
 function getSessions() {
-  const n = Math.min(1000, Math.max(1, parseInt($('sessions').value) || 1));
+  const n = Math.min(MAX_SESSIONS, Math.max(1, parseInt($('sessions').value) || 1));
   $('sessions').value = n;
   return n;
 }
