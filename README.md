@@ -1,5 +1,7 @@
 # Baccarat Simulator
 
+**Live:** https://geniuneajay.github.io/baccarat-simulator/
+
 A browser-based Baccarat (Punto Banco) simulator. Enter how many sessions to play; each session is 70 hands, always betting on **Banker**, with a per-hand bet progression carried from one session to the next.
 
 > Virtual simulation only. Every run is random. It shows what happens under real Baccarat rules and cannot predict a real game.
