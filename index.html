@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Baccarat Simulator</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header>
+  <h1>Baccarat Simulator</h1>
+  <p class="note">Virtual simulation only. Every run is random: it shows what happens under proper Baccarat rules and cannot predict a real game.</p>
+</header>
+
+<main>
+  <section class="card" id="input">
+    <h2>Setup</h2>
+    <div class="form">
+      <label>Number of sessions
+        <input type="number" id="sessions" value="3" min="1" max="1000">
+      </label>
+      <div class="fixed"><span>Hands per session</span><b>70</b></div>
+      <div class="fixed"><span>Starting bet</span><b>₹50,000</b></div>
+      <div class="fixed"><span>Bet side</span><b>Banker</b></div>
+    </div>
+    <div class="buttons">
+      <button id="runBtn" class="primary">Run Simulation</button>
+      <button id="againBtn">Run Again</button>
+      <button id="resetBtn">Reset</button>
+      <button id="soundBtn" title="Turn counter sound on or off">🔊 Sound: On</button>
+    </div>
+  </section>
+
+  <div id="results" hidden>
+    <section class="card">
+      <h2>A. Overall Summary</h2>
+      <div id="analysisStatus" class="status"></div>
+      <div id="summary" class="stats"></div>
+    </section>
+
+    <section class="card">
+      <h2>B. Session Summary</h2>
+      <div class="scroll"><table id="sessionTable"></table></div>
+      <div class="pager" id="sessionPager"></div>
+    </section>
+
+    <section class="card">
+      <h2>C. Accuracy: This Run vs Real World</h2>
+      <div class="scroll"><table id="compareTable"></table></div>
+      <div id="accuracyNote"></div>
+    </section>
+
+    <section class="card">
+      <h2>F. Graph — Total P/L after each session</h2>
+      <canvas id="graph" height="260"></canvas>
+    </section>
+
+    <section class="card">
+      <h2>D. Bet Line Chart</h2>
+      <div class="scroll tall"><table id="betLineTable"></table></div>
+      <div class="pager" id="betPager"></div>
+    </section>
+
+    <section class="card">
+      <h2>E. Hand-by-Hand Chart</h2>
+      <label>Session <select id="sessionPick"></select></label>
+      <div class="scroll tall"><table id="handTable"></table></div>
+    </section>
+  </div>
+</main>
+
+<script src="game.js"></script>
+</body>
+</html>
