@@ -69,6 +69,9 @@ function nextBet(bet, result) {
 function runSimulation(sessions) {
   let bets = Array(HANDS).fill(START_BET);
   let totalPL = 0;
+  // capital = smallest amount you must bring so every bet can be paid from your own cash
+  // (cash in hand before a hand = capital + P/L so far, and it must cover that bet)
+  let capital = 0, won = 0, lost = 0;
   const out = [];
   for (let s = 1; s <= sessions; s++) {
     const shoe = buildShoe();
@@ -76,7 +79,9 @@ function runSimulation(sessions) {
     const count = { B: 0, P: 0, T: 0 };
     for (let i = 0; i < HANDS; i++) {
       const h = playHand(shoe), bet = bets[i];
+      if (bet - totalPL > capital) capital = bet - totalPL;
       const pnl = h.result === 'B' ? bet : h.result === 'P' ? -bet : 0; // no commission
+      if (pnl > 0) won += pnl; else lost -= pnl;
       count[h.result]++; sessionPL += pnl; totalPL += pnl;
       next[i] = nextBet(bet, h.result);
       rows.push({ hand: i + 1, ...h, bet, pnl, sessionPL, nextBet: next[i] });
@@ -87,7 +92,7 @@ function runSimulation(sessions) {
     });
     bets = next;
   }
-  return { sessions: out, nextBets: bets };
+  return { sessions: out, nextBets: bets, capital, won, lost };
 }
 
 // ---------- Formatting ----------
@@ -146,7 +151,7 @@ function resultSound(pl) {
 function setSoundBtn() { $('soundBtn').textContent = soundOn ? '🔊 Sound: On' : '🔇 Sound: Off'; }
 
 // ---------- Counter animation (0 → target) ----------
-const COUNTER_IDS = ['sumPL', 'sumBet', 'sumMax', 'sumNext'];
+const COUNTER_IDS = ['sumPL', 'sumInvest', 'sumReturn', 'sumROI', 'sumWon', 'sumLost', 'sumBet', 'sumMax', 'sumNext'];
 function stopCounters() { COUNTER_IDS.forEach(id => { const el = $(id); el._countToken = (el._countToken || 0) + 1; }); }
 
 function countUp(el, target, { format, delay = 0, duration = 2600, colorBySign = false, onDone }) {
@@ -182,15 +187,30 @@ function render(data) {
   const totalBetAll = S.reduce((a, s) => a + s.totalBet, 0);
   const maxBetAll = Math.max(...S.map(s => s.maxBet), ...data.nextBets);
   const nextTotal = data.nextBets.reduce((a, b) => a + b, 0);
+  const invest = data.capital, returned = invest + last.totalPL;
+  const roiBp = Math.round(last.totalPL / invest * 10000);   // return % in basis points
   $('summary').innerHTML = `
     <div class="stat big"><span>Final profit / loss</span><b id="sumPL"></b></div>
-    <div class="stat"><span>Total amount bet</span><b id="sumBet"></b></div>
+    <div class="stat invest"><span>Investment needed (your own cash)</span><b id="sumInvest"></b></div>
+    <div class="stat invest"><span>Amount returned at the end</span><b id="sumReturn"></b></div>
+    <div class="stat invest"><span>Return on investment</span><b id="sumROI"></b></div>
+    <div class="stat"><span>Total won (Banker wins)</span><b id="sumWon" class="pos"></b></div>
+    <div class="stat"><span>Total lost (Player wins)</span><b id="sumLost" class="neg"></b></div>
+    <div class="stat"><span>Total amount bet (turnover)</span><b id="sumBet"></b></div>
     <div class="stat"><span>Biggest single bet</span><b id="sumMax"></b></div>
-    <div class="stat"><span>Next-session total bet</span><b id="sumNext"></b></div>`;
+    <div class="stat"><span>Next-session total bet</span><b id="sumNext"></b></div>
+    <p class="muted explain"><b>Investment needed</b> = the least cash you must bring so every bet is paid from your own pocket
+      (cash before each hand = investment + profit so far). <b>Amount returned</b> = investment + final profit/loss.
+      <b>Total amount bet</b> is not investment: the same money is bet again and again.</p>`;
   // Side numbers settle first; Final P/L runs longest and lands last, then the result sound plays.
   const status = $('analysisStatus');
   status.className = 'status running';
   status.innerHTML = `<span class="dot"></span>Analyzing ${fmt(S.length * HANDS)} hands across ${fmt(S.length)} session${S.length > 1 ? 's' : ''}…`;
+  countUp($('sumInvest'), invest, { format: rupee, delay: 0 });
+  countUp($('sumReturn'), returned, { format: rupee, delay: 250 });
+  countUp($('sumROI'), roiBp, { format: v => (v > 0 ? '+' : '') + (v / 100).toFixed(2) + '%', colorBySign: true, delay: 250 });
+  countUp($('sumWon'), data.won, { format: rupee, delay: 0 });
+  countUp($('sumLost'), data.lost, { format: rupee, delay: 0 });
   countUp($('sumBet'), totalBetAll, { format: rupee, delay: 0 });
   countUp($('sumMax'), maxBetAll, { format: rupee, delay: 500 });
   countUp($('sumNext'), nextTotal, { format: rupee, delay: 1000 });

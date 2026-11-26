@@ -25,6 +25,8 @@ button:hover { filter: brightness(1.15); }
 .stat span { display: block; font-size: .8rem; color: #9fb3a6; }
 .stat b { font-size: 1.3rem; font-variant-numeric: tabular-nums; }
 .stat.big b { font-size: 1.9rem; }
+.stat.invest { border: 1px solid #c9a227; }
+.stats .explain { grid-column: 1 / -1; margin: 2px 0 0; line-height: 1.45; }
 
 .status { margin: -4px 0 12px; font-size: .9rem; color: #9fb3a6; min-height: 1.3em; }
 .status.done { font-weight: 600; }
