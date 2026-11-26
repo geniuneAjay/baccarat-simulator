@@ -1,5 +1,6 @@
 const HANDS = 70, START_BET = 50000, MIN_BET = 50000, DECKS = 8;
 const MAX_SESSIONS = 2000;   // input box limit
+const COMMISSION = 0.05;     // casino keeps 5% of Banker wins when the checkbox is ticked
 
 // Exact real-world odds for 8-deck Punto Banco
 const REAL = { B: 0.458597, P: 0.446247, T: 0.095156 };
@@ -66,37 +67,49 @@ function nextBet(bet, result) {
 }
 
 // ---------- Main ----------
-function runSimulation(sessions) {
+// Step 1: deal the cards and set the bets. Bets depend only on win/lose/tie, not on commission,
+// so the same deal can be priced with or without commission (see applyMoney).
+function runSimulation(sessions, commission = false) {
   let bets = Array(HANDS).fill(START_BET);
-  let totalPL = 0;
-  // All 70 bets of a session are placed at the same time, so before each session
-  // the cash in hand must cover the session's total bet. Any shortfall comes from your pocket.
-  // capital = all new cash put in across sessions; cash = money in hand between sessions.
-  let capital = 0, cash = 0, won = 0, lost = 0;
   const out = [];
   for (let s = 1; s <= sessions; s++) {
     const shoe = buildShoe();
-    const rows = []; let sessionPL = 0; const next = [];
+    const rows = [], next = [];
     const count = { B: 0, P: 0, T: 0 };
-    const totalBet = bets.reduce((a, b) => a + b, 0);
-    const topUp = Math.max(0, totalBet - cash);       // new cash needed this session
-    capital += topUp; cash += topUp;
     for (let i = 0; i < HANDS; i++) {
       const h = playHand(shoe), bet = bets[i];
-      const pnl = h.result === 'B' ? bet : h.result === 'P' ? -bet : 0; // no commission
-      if (pnl > 0) won += pnl; else lost -= pnl;
-      count[h.result]++; sessionPL += pnl; totalPL += pnl;
+      count[h.result]++;
       next[i] = nextBet(bet, h.result);
-      rows.push({ hand: i + 1, ...h, bet, pnl, sessionPL, nextBet: next[i] });
+      rows.push({ hand: i + 1, ...h, bet, nextBet: next[i] });
     }
-    cash += sessionPL;                                 // returns = total bet + session P/L
-    out.push({
-      session: s, rows, count, sessionPL, totalPL,
-      totalBet, maxBet: Math.max(...bets), topUp, cashAfter: cash
-    });
+    out.push({ session: s, rows, count, totalBet: bets.reduce((a, b) => a + b, 0), maxBet: Math.max(...bets) });
     bets = next;
   }
-  return { sessions: out, nextBets: bets, capital, won, lost };
+  return applyMoney({ sessions: out, nextBets: bets }, commission);
+}
+
+// Step 2: work out the money. With commission, a Banker win pays 95% of the bet (5% kept by the casino).
+// All 70 bets of a session are placed at the same time, so before each session the cash in hand
+// must cover the session's total bet; any shortfall comes from your pocket.
+// capital = all new cash put in across sessions; cash = money in hand between sessions.
+function applyMoney(data, commission) {
+  const rate = commission ? COMMISSION : 0;
+  let totalPL = 0, capital = 0, cash = 0, won = 0, lost = 0, commissionPaid = 0;
+  for (const s of data.sessions) {
+    s.topUp = Math.max(0, s.totalBet - cash);         // new cash needed this session
+    capital += s.topUp; cash += s.topUp;
+    let sessionPL = 0;
+    for (const r of s.rows) {
+      const fee = r.result === 'B' ? Math.round(r.bet * rate) : 0;
+      r.pnl = r.result === 'B' ? r.bet - fee : r.result === 'P' ? -r.bet : 0;
+      if (r.pnl > 0) won += r.pnl; else lost -= r.pnl;
+      commissionPaid += fee;
+      sessionPL += r.pnl; r.sessionPL = sessionPL;
+    }
+    totalPL += sessionPL; cash += sessionPL;          // returns = total bet + session P/L
+    Object.assign(s, { sessionPL, totalPL, cashAfter: cash });
+  }
+  return Object.assign(data, { commission, capital, won, lost, commissionPaid });
 }
 
 // ---------- Formatting ----------
@@ -155,8 +168,8 @@ function resultSound(pl) {
 function setSoundBtn() { $('soundBtn').textContent = soundOn ? '🔊 Sound: On' : '🔇 Sound: Off'; }
 
 // ---------- Counter animation (0 → target) ----------
-const COUNTER_IDS = ['sumPL', 'sumInvest', 'sumReturn', 'sumROI', 'sumWon', 'sumLost', 'sumBet', 'sumMax', 'sumNext'];
-function stopCounters() { COUNTER_IDS.forEach(id => { const el = $(id); el._countToken = (el._countToken || 0) + 1; }); }
+const COUNTER_IDS = ['sumPL', 'sumGross', 'sumComm','sumInvest', 'sumReturn', 'sumROI', 'sumWon', 'sumLost', 'sumBet', 'sumMax', 'sumNext'];
+function stopCounters() { COUNTER_IDS.forEach(id => { const el = $(id); if (el) el._countToken = (el._countToken || 0) + 1; }); }
 
 function countUp(el, target, { format, delay = 0, duration = 2600, colorBySign = false, onDone }) {
   const token = (el._countToken = (el._countToken || 0) + 1);   // a newer run cancels an older animation
@@ -193,12 +206,16 @@ function render(data) {
   const nextTotal = data.nextBets.reduce((a, b) => a + b, 0);
   const invest = data.capital, returned = invest + last.totalPL;
   const roiBp = Math.round(last.totalPL / invest * 10000);   // return % in basis points
+  const comm = data.commission, grossPL = last.totalPL + data.commissionPaid;
+  const commCards = comm ? `
+    <div class="stat comm"><span>Profit / loss before commission</span><b id="sumGross"></b></div>
+    <div class="stat comm"><span>Commission paid (5% of Banker wins)</span><b id="sumComm" class="neg"></b></div>` : '';
   $('summary').innerHTML = `
-    <div class="stat big"><span>Final profit / loss</span><b id="sumPL"></b></div>
+    <div class="stat big"><span>Final profit / loss${comm ? ' (after 5% commission)' : ' (no commission)'}</span><b id="sumPL"></b></div>${commCards}
     <div class="stat invest"><span>Investment needed (70 hands at once)</span><b id="sumInvest"></b></div>
     <div class="stat invest"><span>Amount returned at the end</span><b id="sumReturn"></b></div>
     <div class="stat invest"><span>Return on investment</span><b id="sumROI"></b></div>
-    <div class="stat"><span>Total won (Banker wins)</span><b id="sumWon" class="pos"></b></div>
+    <div class="stat"><span>Total won (Banker wins${comm ? ', after commission' : ''})</span><b id="sumWon" class="pos"></b></div>
     <div class="stat"><span>Total lost (Player wins)</span><b id="sumLost" class="neg"></b></div>
     <div class="stat"><span>Total amount bet (turnover)</span><b id="sumBet"></b></div>
     <div class="stat"><span>Biggest single bet</span><b id="sumMax"></b></div>
@@ -210,6 +227,10 @@ function render(data) {
   const status = $('analysisStatus');
   status.className = 'status running';
   status.innerHTML = `<span class="dot"></span>Analyzing ${fmt(S.length * HANDS)} hands across ${fmt(S.length)} session${S.length > 1 ? 's' : ''}…`;
+  if (comm) {
+    countUp($('sumGross'), grossPL, { format: money, colorBySign: true, delay: 0 });
+    countUp($('sumComm'), data.commissionPaid, { format: v => '−' + rupee(v), delay: 250 });
+  }
   countUp($('sumInvest'), invest, { format: rupee, delay: 0 });
   countUp($('sumReturn'), returned, { format: rupee, delay: 250 });
   countUp($('sumROI'), roiBp, { format: v => (v > 0 ? '+' : '') + (v / 100).toFixed(2) + '%', colorBySign: true, delay: 250 });
@@ -223,7 +244,8 @@ function render(data) {
     onDone: () => {
       resultSound(last.totalPL);
       status.className = 'status done ' + cls(last.totalPL);
-      status.textContent = `✓ Analysis complete: ${last.totalPL > 0 ? 'profit' : last.totalPL < 0 ? 'loss' : 'break-even'} of ${money(last.totalPL)} after ${fmt(S.length)} session${S.length > 1 ? 's' : ''}.`;
+      status.textContent = `✓ Analysis complete: ${last.totalPL > 0 ? 'profit' : last.totalPL < 0 ? 'loss' : 'break-even'} of ${money(last.totalPL)} after ${fmt(S.length)} session${S.length > 1 ? 's' : ''}` +
+        (comm ? ` (after paying ${rupee(data.commissionPaid)} commission).` : ' (no commission deducted).');
     }
   });
 
@@ -405,8 +427,10 @@ function getSessions() {
   $('sessions').value = n;
   return n;
 }
-$('runBtn').onclick = () => render(runSimulation(getSessions()));
-$('againBtn').onclick = () => render(runSimulation(getSessions()));
+$('runBtn').onclick = () => render(runSimulation(getSessions(), $('commission').checked));
+$('againBtn').onclick = () => render(runSimulation(getSessions(), $('commission').checked));
+// Ticking/unticking re-prices the SAME cards, so both results can be compared directly.
+$('commission').onchange = () => { if (lastData) render(applyMoney(lastData, $('commission').checked)); };
 $('resetBtn').onclick = () => { stopCounters(); $('sessions').value = 3; $('results').hidden = true; lastData = null; };
 $('soundBtn').onclick = () => {
   soundOn = !soundOn;
