@@ -69,26 +69,30 @@ function nextBet(bet, result) {
 function runSimulation(sessions) {
   let bets = Array(HANDS).fill(START_BET);
   let totalPL = 0;
-  // capital = smallest amount you must bring so every bet can be paid from your own cash
-  // (cash in hand before a hand = capital + P/L so far, and it must cover that bet)
-  let capital = 0, won = 0, lost = 0;
+  // All 70 bets of a session are placed at the same time, so before each session
+  // the cash in hand must cover the session's total bet. Any shortfall comes from your pocket.
+  // capital = all new cash put in across sessions; cash = money in hand between sessions.
+  let capital = 0, cash = 0, won = 0, lost = 0;
   const out = [];
   for (let s = 1; s <= sessions; s++) {
     const shoe = buildShoe();
     const rows = []; let sessionPL = 0; const next = [];
     const count = { B: 0, P: 0, T: 0 };
+    const totalBet = bets.reduce((a, b) => a + b, 0);
+    const topUp = Math.max(0, totalBet - cash);       // new cash needed this session
+    capital += topUp; cash += topUp;
     for (let i = 0; i < HANDS; i++) {
       const h = playHand(shoe), bet = bets[i];
-      if (bet - totalPL > capital) capital = bet - totalPL;
       const pnl = h.result === 'B' ? bet : h.result === 'P' ? -bet : 0; // no commission
       if (pnl > 0) won += pnl; else lost -= pnl;
       count[h.result]++; sessionPL += pnl; totalPL += pnl;
       next[i] = nextBet(bet, h.result);
       rows.push({ hand: i + 1, ...h, bet, pnl, sessionPL, nextBet: next[i] });
     }
+    cash += sessionPL;                                 // returns = total bet + session P/L
     out.push({
       session: s, rows, count, sessionPL, totalPL,
-      totalBet: bets.reduce((a, b) => a + b, 0), maxBet: Math.max(...bets)
+      totalBet, maxBet: Math.max(...bets), topUp, cashAfter: cash
     });
     bets = next;
   }
@@ -185,13 +189,13 @@ function render(data) {
   $('results').hidden = false;
 
   const totalBetAll = S.reduce((a, s) => a + s.totalBet, 0);
-  const maxBetAll = Math.max(...S.map(s => s.maxBet), ...data.nextBets);
+  const maxBetAll = Math.max(...S.map(s => s.maxBet));   // only bets actually placed
   const nextTotal = data.nextBets.reduce((a, b) => a + b, 0);
   const invest = data.capital, returned = invest + last.totalPL;
   const roiBp = Math.round(last.totalPL / invest * 10000);   // return % in basis points
   $('summary').innerHTML = `
     <div class="stat big"><span>Final profit / loss</span><b id="sumPL"></b></div>
-    <div class="stat invest"><span>Investment needed (your own cash)</span><b id="sumInvest"></b></div>
+    <div class="stat invest"><span>Investment needed (70 hands at once)</span><b id="sumInvest"></b></div>
     <div class="stat invest"><span>Amount returned at the end</span><b id="sumReturn"></b></div>
     <div class="stat invest"><span>Return on investment</span><b id="sumROI"></b></div>
     <div class="stat"><span>Total won (Banker wins)</span><b id="sumWon" class="pos"></b></div>
@@ -199,9 +203,9 @@ function render(data) {
     <div class="stat"><span>Total amount bet (turnover)</span><b id="sumBet"></b></div>
     <div class="stat"><span>Biggest single bet</span><b id="sumMax"></b></div>
     <div class="stat"><span>Next-session total bet</span><b id="sumNext"></b></div>
-    <p class="muted explain"><b>Investment needed</b> = the least cash you must bring so every bet is paid from your own pocket
-      (cash before each hand = investment + profit so far). <b>Amount returned</b> = investment + final profit/loss.
-      <b>Total amount bet</b> is not investment: the same money is bet again and again.</p>`;
+    <p class="muted explain">All 70 hands of a session are played <b>at the same time</b>, so before each session you need cash
+      equal to that session's total bet. <b>Investment needed</b> = all new cash you had to put in across sessions
+      (see "New cash in" in the session table). <b>Amount returned</b> = investment + final profit/loss.</p>`;
   // Side numbers settle first; Final P/L runs longest and lands last, then the result sound plays.
   const status = $('analysisStatus');
   status.className = 'status running';
@@ -262,11 +266,13 @@ function pager(elId, page, pages, info, go) {
 function renderSessionTable(page) {
   const S = lastData.sessions, pages = Math.ceil(S.length / SESSION_PAGE);
   const from = page * SESSION_PAGE, part = S.slice(from, from + SESSION_PAGE);
-  let h = `<tr><th>Session</th><th>Banker</th><th>Player</th><th>Tie</th><th>Banker %</th><th>Total bet placed</th><th>Biggest bet</th><th>Session P/L</th><th>Total P/L</th></tr>`;
+  let h = `<tr><th>Session</th><th>Banker</th><th>Player</th><th>Tie</th><th>Banker %</th><th>Total bet placed</th><th>New cash in</th><th>Biggest bet</th><th>Session P/L</th><th>Total P/L</th><th>Cash after session</th></tr>`;
   for (const s of part) {
     h += `<tr><td>${s.session}</td><td>${s.count.B}</td><td>${s.count.P}</td><td>${s.count.T}</td>
-      <td>${(s.count.B / HANDS * 100).toFixed(1)}%</td><td>${fmt(s.totalBet)}</td><td>${fmt(s.maxBet)}</td>
-      <td class="${cls(s.sessionPL)}">${inr(s.sessionPL)}</td><td class="${cls(s.totalPL)}">${inr(s.totalPL)}</td></tr>`;
+      <td>${(s.count.B / HANDS * 100).toFixed(1)}%</td><td>${fmt(s.totalBet)}</td>
+      <td class="${s.topUp > 0 ? 'warn' : ''}">${fmt(s.topUp)}</td><td>${fmt(s.maxBet)}</td>
+      <td class="${cls(s.sessionPL)}">${inr(s.sessionPL)}</td><td class="${cls(s.totalPL)}">${inr(s.totalPL)}</td>
+      <td>${fmt(s.cashAfter)}</td></tr>`;
   }
   $('sessionTable').innerHTML = h;
   pager('sessionPager', page, pages, `Sessions ${from + 1}–${from + part.length} of ${S.length}`, renderSessionTable);
